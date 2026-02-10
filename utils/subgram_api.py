@@ -1,69 +1,37 @@
-# --- Файл: utils/subgram_api.py ---
-import aiohttp
-import logging
+# Или в чат (если нужно)
+                        # await bot.send_message(chat.id, message_text, reply_markup=keyboard)
+                    except Exception as e:
+                        logging.error(f"Failed to send message to {user.id}: {e}")
+        else:
+            # Приветствуем пользователя
+            await bot.send_message(
+                chat_id=chat.id,
+                text=f"👋 Добро пожаловать, {user.first_name or 'друг'}!"
+            )
 
-API_KEY = "8088366355:AAEbbEmb3uCT_5hR9kOVL20oe0a6zEM8pcw"
-URL = "https://api.subgram.org/get-sponsors"
-
-async def get_subgram_sponsors(user_id: int, chat_id: int, **kwargs) -> dict | None:
-    """Универсальная функция для запроса спонсоров."""
-    headers = { "Auth": API_KEY }
-    payload = { "user_id": user_id, "chat_id": chat_id }
-    payload.update(kwargs)
-    
-    async with aiohttp.ClientSession() as session:
-        try:
-            async with session.post(URL, headers=headers, json=payload, timeout=10) as response:
-                return await response.json()
-        except Exception as e:
-            logging.error(f"Ошибка запроса к SubGram API: {e}")
-            return None
-
-# --- Файл: handlers/start.py (пример обработчика) ---
-from aiogram import F, types, Router
-from utils.subgram_api import get_subgram_sponsors
-from aiogram.filters import CommandStart
-
-router = Router()
-
-@router.message(CommandStart())
-async def handle_start_command(message: types.Message):
-    # Вызываем функцию для проверки подписки
-    response = await get_subgram_sponsors(
-        user_id=message.from_user.id,
-        chat_id=message.chat.id
-    )
-
-    if response:
-        status = response.get("status")
-       
-        if status and status == 'warning':
-            # Сервис сам отправит сообщение с просьбой подписаться
-            return
-        if status and status == "error":
-            logging.warning(f"Ошибка SubGram API: {response.get('message')}. Предоставляем доступ.")
-
-    await message.answer("✅ Доступ предоставлен!")
-    # ... ваш код для выдачи контента ...
-
-
-@router.callback_query(F.data == 'subgram-op')
-async def handle_subgram_callback(callback: types.CallbackQuery):
-    user_id = callback.from_user.id
-    chat_id = callback.message.chat.id
+@dp.callback_query(F.data == "check_subs")
+async def check_subs_handler(callback: types.CallbackQuery):
+    user = callback.from_user
     
     await callback.answer("⏳ Проверяем подписки...")
+    
+    response = await get_subgram_sponsors(
+        user_id=user.id,
+        chat_id=TARGET_CHAT_ID,
+        first_name=user.first_name or "",
+        username=user.username or "",
+        language_code=user.language_code or "ru",
+        is_premium=bool(user.is_premium)
+    )
+    
+    if response and response.get('status') != 'warning':
+        await callback.message.edit_text("✅ Проверка пройдена! Добро пожаловать в чат!")
+    else:
+        await callback.answer("❌ Вы подписались не на все каналы", show_alert=True)
 
-    # Отправляем повторный запрос в SubGram API с новыми данными
-    response = await get_subgram_sponsors(user_id, chat_id)
+async def main():
+    logging.info("Starting bot...")
+    await dp.start_polling(bot)
 
-    if response:
-        status = response.get("status")
-       
-        if status and status == 'warning':
-            return
-        if status and status == "error":
-            logging.warning(f"Ошибка SubGram API: {response.get('message')}. Предоставляем доступ.")
-
-    await callback.message.answer("✅ Доступ предоставлен!")
-    # ... ваш код для выдачи контента ...
+if name == "main":
+    asyncio.run(main())
